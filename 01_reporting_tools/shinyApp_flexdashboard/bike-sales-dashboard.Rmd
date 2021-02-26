@@ -26,6 +26,7 @@ library(lubridate)
 
 # Interactive Visualizations
 library(plotly)
+library(ggthemes)
 
 # Spatial Data
 library(rgeos)
@@ -34,7 +35,7 @@ library(sf)
 
 # Script to handle data and plot total sales and sales by category
 # Script also include currency formatting
-source("../00_scripts/plot_sales.R")
+source("../../00_scripts/plot_sales.R")
 ```
 
 
@@ -42,9 +43,9 @@ source("../00_scripts/plot_sales.R")
 
 ```{r}
 # Bike data
-bikes_tbl      <- readRDS("../00_bike_data/bikes_tbl.rds")
-bikeshops_tbl  <- readRDS("../00_bike_data/bikeshops_tbl.rds")
-orderlines_tbl <- readRDS("../00_bike_data/orderlines_tbl.rds")
+bikes_tbl      <- readRDS("../../00_bike_data/bikes_tbl.rds")
+bikeshops_tbl  <- readRDS("../../00_bike_data/bikeshops_tbl.rds")
+orderlines_tbl <- readRDS("../../00_bike_data/orderlines_tbl.rds")
 
 bike_orderlines_tbl <- orderlines_tbl %>%
   mutate(order_date = lubridate::ymd(order_date))%>%

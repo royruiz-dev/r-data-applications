@@ -22,6 +22,15 @@ plot_total_sales <-
       # Formatting
       scale_y_continuous(labels = euro_format()) +
       expand_limits(y = 0) +
+      scale_x_date(breaks = "16 weeks", date_labels = "%b %d") +
+      # Uses minimal theme for minimal look
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45),
+            plot.title = element_text(face = "bold"),
+            axis.text = element_text(size = "10")) +
+      
+      labs(y = "Adjusted Share Price",
+           x = "")
       labs(
         title = "Total Sales",
         y = "Revenue (Euro)",
@@ -103,6 +112,12 @@ function(data, category_1 = "All", category_2 = "All",
     theme(legend.position = "none",
           strip.text.x = element_text(margin = margin(5, 5, 5, 5, unit = "pt"))) +
     scale_y_continuous(labels = euro_format(scale = 1e-3, suffix = "K €")) +
+    scale_x_date(breaks = "16 weeks", date_labels = "%b %d") +
+    # Uses minimal theme for minimal look
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45),
+          plot.title = element_text(face = "bold"),
+          axis.text = element_text(size = "10")) +
     labs(
       title = "Sales By Category 2",
       y = "", x = ""
