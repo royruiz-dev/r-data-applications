@@ -1,5 +1,7 @@
 ---
-title: "Shiny Tutorial"
+title: "Shiny App Practice"
+author: "Roy Ruiz"
+date: "February 11, 2021"
 output: 
   flexdashboard::flex_dashboard:
     orientation: columns
@@ -46,7 +48,7 @@ checkboxGroupInput(inputId = "checkbox_group",
 dateRangeInput(inputId = "date_range", 
                label   = h4("Date Range"), 
                start   = "2018-01-01", 
-               end     = today(),        
+               end     = today(), # "2021-02-11" 
                min     = min(sales_data_tbl$date), 
                max     = max(sales_data_tbl$date), 
                startview = "year")
@@ -76,7 +78,7 @@ observeEvent(eventExpr = input$reset, handlerExpr = {
   
   updateDateRangeInput(session = session, 
                        inputId = "date_range", 
-                       start   = "2018-01-01", 
+                       start   = min(sales_data_tbl$date), 
                        end     = today())
   
   updateSliderInput(session = session, 
@@ -148,7 +150,6 @@ output$dt_output_1 <- DT::renderDataTable(expr = {
 }, options = list(scrollY = "250px"))
 
 DTOutput(outputId = "dt_output_1")
-
 ```
 
 
