@@ -1,0 +1,281 @@
+---
+title: "Sales Dashboard"
+author: "Roy Ruiz"
+date: "February 25, 2021"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+runtime: shiny
+---
+
+<!-- Step 1 (shown above): Initialize the layout -->
+
+<!-- Step 2: Load the libraries -->
+
+```{r setup, include=FALSE}
+# Shiny
+library(flexdashboard)
+library(shiny)
+library(shinyWidgets)
+library(DT)
+
+# Core
+library(tidyverse)
+library(lubridate)
+
+# Interactive Visualizations
+library(plotly)
+
+# Spatial Data
+library(rgeos)
+library(raster)
+library(sf)
+
+# Script to handle data and plot total sales and sales by category
+# Script also include currency formatting
+source("../00_scripts/plot_sales.R")
+```
+
+
+<!-- Step 3: Code preparation -->
+
+```{r}
+# Bike data
+bikes_tbl      <- readRDS("../00_bike_data/bikes_tbl.rds")
+bikeshops_tbl  <- readRDS("../00_bike_data/bikeshops_tbl.rds")
+orderlines_tbl <- readRDS("../00_bike_data/orderlines_tbl.rds")
+
+bike_orderlines_tbl <- orderlines_tbl %>%
+  mutate(order_date = lubridate::ymd(order_date))%>%
+  left_join(bikes_tbl,     by = c("product_id" = "bike_id")) %>%
+  left_join(bikeshops_tbl, by = c("customer_id" = "bikeshop_id")) %>%
+  mutate(total_price = price_euro * quantity)
+
+# German spatial data
+germany_sp <- getData('GADM', country='DE', level=1) 
+# Convert SpatialPolygonsDataFrame to an sf dataframe
+germany_sf <- st_as_sf(germany_sp) %>% 
+                  # Add english names
+                  mutate(VARNAME_1 = ifelse(is.na(VARNAME_1), NAME_1, VARNAME_1))
+
+# Margins for Time Plots
+#margin_size <- list(l = 20, r = 20, b = 160, t = 60)
+```
+
+<!-- Step 4: Wrangle and plot data in a new section -->
+
+Sidebar {.sidebar}
+------------------------
+
+```{r}
+# Inputs
+dateRangeInput(inputId = "date_range", 
+               label   = h4("Date Range"), 
+               start   = min(bike_orderlines_tbl$order_date),
+               end     = max(bike_orderlines_tbl$order_date),
+               min     = min(bike_orderlines_tbl$order_date),
+               max     = max(bike_orderlines_tbl$order_date),
+               startview = "year")
+
+checkboxGroupButtons(inputId = "Id059",
+                     label = h4("Bike Type"),
+                     choices = c("Mountain","Road","Hybrid / City","E-Bikes","Gravel"),
+                     selected = c("Mountain", "Road"),
+                     status = "primary",
+                     checkIcon = list(yes = icon("ok", lib = "glyphicon"),
+                                      no = icon("remove", lib = "glyphicon")))
+
+pickerInput(
+   inputId = "Id094",
+   label = h4("Bike Family"), 
+   choices = c("Trail","Race","Triathlon Bike","Dirt Jump","City","Cyclocross","Enduro",
+                  "E-Mountain","All-Road","Endurance","E-City","Cross-Country","Touring",
+                  "E-Gravel","Adventure","Downhill","Fat Bikes","E-Fitness","E-Trekking",
+                  "E-Road"),
+   selected = "Trail",
+   options = list(`actions-box` = TRUE),
+   multiple = TRUE)
+```
+
+
+```{r}
+# Reset button
+actionButton(inputId = "reset", 
+             label   = "Reset", 
+             icon    = icon("retweet"))
+
+observeEvent(eventExpr = input$reset, handlerExpr = {
+  
+  updateCheckboxGroupButtons(session  = session, 
+                           inputId  = "Id059",
+                           status = "primary",
+                           selected = c("Mountain", "Road"),
+                           checkIcon = list(yes = icon("ok", lib = "glyphicon"),
+                                            no = icon("remove", lib = "glyphicon")))
+  updateRadioGroupButtons(session  = session,
+                          inputId  = "Id071",
+                          status = "primary",
+                          selected = "M",
+                          checkIcon = list(yes = icon("ok", lib = "glyphicon"),
+                                            no = icon("remove", lib = "glyphicon")))
+  
+  updateDateRangeInput(session = session, 
+                       inputId = "date_range", 
+                       start   = min(bike_orderlines_tbl$order_date),
+                       end     = max(bike_orderlines_tbl$order_date))
+  
+  updatePickerInput(session = session,
+                    inputId = "Id094",
+                    selected = "Trail")
+  
+})
+
+# Apply button
+actionButton(inputId = "apply", 
+             label   = "Apply", 
+             icon    = icon("play"))
+
+observeEvent(eventExpr = input$apply, handlerExpr = {    
+   
+bike_orderlines_filtered <- bike_orderlines_tbl %>%
+  filter(order_date %>% between(ymd(input$date_range[1]), ymd(input$date_range[2]))) %>%
+  filter(category_1 %in% input$Id059) %>%
+  filter(category_2 %in% input$Id094)
+
+# Dashboard Summary top blocks
+output$order <- renderValueBox({
+  valueBox(count(bike_orderlines_filtered[1])$n, "Orders", icon = "fa-heartbeat")
+  })
+  
+output$sales <- renderValueBox({
+  valueBox(sum(bike_orderlines_filtered$total_price) %>% 
+             format_to_million_dollar(), "Sales", icon = "fa-money-check-alt")
+  })
+
+mountain_count <- count(bike_orderlines_filtered %>% filter(category_1 == "Mountain"))$n
+road_count <- count(bike_orderlines_filtered %>% filter(category_1 == "Road"))$n
+mountain_road_ratio <- mountain_count / road_count
+
+output$ratio <- renderValueBox({
+  valueBox(ifelse(is.infinite(mountain_road_ratio), "N/A", 
+                  ifelse(is.nan(mountain_road_ratio), "N/A", 
+                         round(mountain_road_ratio, digits=2))),
+           "Ratio, Mountain to Road", icon = "fa-brain")
+  })
+
+# Geo Plot
+geo_plot_tbl <- bike_orderlines_filtered %>%
+  group_by(state) %>%
+  summarise(total_revenue = sum(total_price)) %>%
+  ungroup() %>%
+  right_join(germany_sf, by = c("state" = "VARNAME_1")) %>% 
+  mutate(total_revenue = ifelse(is.na(total_revenue), 0, total_revenue)) %>% 
+  mutate(label_text = str_glue("State: {state}
+                                Revenue: {format_to_euro(total_revenue)}")) %>% 
+  st_as_sf()
+
+output$geo_plot <- renderPlotly(
+  plot_ly(geo_plot_tbl,
+          split      = ~NAME_1,
+          color      = ~total_revenue,
+          colors     = "Blues",
+          stroke     = I("black"),
+          hoverinfo  = 'text',
+          text       = ~label_text,
+          hoveron    = "fills",
+          showlegend = FALSE))
+ 
+# Sales Plot
+ifelse(input$Id071 == "D", unit <- "day",
+         ifelse(input$Id071 == "W", unit <- "week",
+                ifelse(input$Id071 == "M", unit <- "month",
+                       ifelse(input$Id071 == "Q", unit <- "quarter",
+                              ifelse(input$Id071 == "Y", unit <- "year")))))
+
+output$sales_plot <- bike_orderlines_tbl %>%
+  filter(order_date %>% between(ymd(input$date_range[1]), ymd(input$date_range[2]))) %>%
+  filter(category_1 %in% input$Id059) %>%
+  filter(category_2 %in% input$Id094) %>%
+  plot_total_sales(unit = unit, shiny = TRUE) %>%
+  renderPlotly()
+
+})
+```
+
+
+Row {data-height=100}
+-------------------------------------
+
+### Orders
+
+```{r}
+valueBoxOutput('order')
+
+output$order <- renderValueBox({
+  valueBox(0, "Orders", icon = "fa-heartbeat", color="#74C858")
+  })
+```
+
+
+### Sales
+
+```{r}
+valueBoxOutput('sales')
+
+output$sales <- renderValueBox({
+  valueBox(0, "Sales", icon = "fa-money-check-alt", color="#63A2E8")
+  })
+```   
+
+
+### Ratio, Mountain to Road
+
+```{r}
+valueBoxOutput('ratio')
+
+output$ratio <- renderValueBox({
+  valueBox(0, "Ratio, Mountain to Road", icon = "fa-brain", color="#B383CB")
+  })
+```
+
+
+Row {data-width=750}
+---------------------------------------------------------------
+
+### By State
+```{r}
+plotlyOutput("geo_plot")
+```
+
+### Over Time
+
+```{r}
+radioGroupButtons(inputId = "Id071",
+   label = "Time Unit",
+   choices = c("D", "W", "M", "Q", "Y"),
+   justified = TRUE,
+   selected = "M",
+   status = "primary",
+   checkIcon = list(yes = icon("ok", lib = "glyphicon"))
+   )
+
+observeEvent(eventExpr = input$Id071, handlerExpr = {
+  # Daily Sales Plot
+  
+  ifelse(input$Id071 == "D", unit <- "day",
+         ifelse(input$Id071 == "W", unit <- "week",
+                ifelse(input$Id071 == "M", unit <- "month",
+                       ifelse(input$Id071 == "Q", unit <- "quarter",
+                              ifelse(input$Id071 == "Y", unit <- "year")))))
+  
+  output$sales_plot <- bike_orderlines_tbl %>%
+    filter(order_date %>% between(ymd(input$date_range[1]), ymd(input$date_range[2]))) %>%
+    filter(category_1 %in% input$Id059) %>%
+    filter(category_2 %in% input$Id094) %>%
+    plot_total_sales(unit = unit, shiny = TRUE) %>%
+    renderPlotly()
+  })
+
+plotlyOutput("sales_plot")
+```
